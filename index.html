@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多進位轉換測驗系統</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            background-color: #3498db;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .question-card {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+        .question-title {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .result-box {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #e8f8f5;
+            border: 1px solid #2ecc71;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>進位轉換測驗</h1>
+    
+    <div id="setup-section">
+        <div class="form-group">
+            <label for="userName">學生姓名 / 學號：</label>
+            <input type="text" id="userName" placeholder="請輸入姓名" required>
+        </div>
+        <div class="form-group">
+            <label for="questionCount">題目數量：</label>
+            <select id="questionCount">
+                <option value="5">5 題</option>
+                <option value="10" selected>10 題</option>
+                <option value="15">15 題</option>
+            </select>
+        </div>
+        <button onclick="startQuiz()">開始測驗</button>
+    </div>
+
+    <div id="quiz-section" style="display: none;">
+        <form id="quizForm">
+            <div id="questionsContainer"></div>
+            <button type="button" onclick="submitQuiz()">提交答案並傳送成績</button>
+        </form>
+    </div>
+
+    <div id="result" class="result-box"></div>
+</div>
+
+<script>
+    // ⚠️ 請將下方字串替換為你在 Google Apps Script 部署獲得的 Web 應用程式 URL
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzF6QduHSHenYHkCTIIx2u6R5GRNj7u__H9o7QDJ34rDl6BMcVB-J7uRxslCZHQc0RXWg/exec";
+
+    let questions = [];
+
+    // 隨機整數產生器
+    function getRandomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // 動態產生測驗題目
+    function generateQuestions(count) {
+        const bases = [2, 8, 10, 16];
+        const baseNames = { 2: "二進位", 8: "八進位", 10: "十進位", 16: "十六進位" };
+        let generated = [];
+
+        for (let i = 0; i < count; i++) {
+            // 隨機選擇來源進位與目標進位
+            let fromBase = bases[getRandomInt(0, bases.length - 1)];
+            let toBase;
+            do {
+                toBase = bases[getRandomInt(0, bases.length - 1)];
+            } while (fromBase === toBase);
+
+            // 產生隨機數值（80% 機率為整數，20% 機率包含小數點）
+            let isFloat = Math.random() < 0.2;
+            let numVal, valStr, answerStr;
+
+            if (!isFloat) {
+                numVal = getRandomInt(1, 255);
+                valStr = numVal.toString(fromBase).toUpperCase();
+                answerStr = numVal.toString(toBase).toUpperCase();
+            } else {
+                // 生成小數（精度取小數點後 2 位）
+                let intPart = getRandomInt(1, 15);
+                let fracPart = getRandomInt(1, 3) / 4; // 0.25, 0.5, 0.75 方便精確轉換
+                numVal = intPart + fracPart;
+                
+                valStr = convertFloatToBase(numVal, fromBase);
+                answerStr = convertFloatToBase(numVal, toBase);
+            }
+
+            generated.push({
+                id: i + 1,
+                fromBase: baseNames[fromBase],
+                toBase: baseNames[toBase],
+                valStr: valStr,
+                answer: answerStr
+            });
+        }
+        return generated;
+    }
+
+    // 處理帶有小數點的進位轉換
+    function convertFloatToBase(val, base) {
+        let intPart = Math.floor(val);
+        let fracPart = val - intPart;
+
+        let intStr = intPart.toString(base).toUpperCase();
+        let fracStr = "";
+
+        if (fracPart > 0) {
+            fracStr = ".";
+            let limit = 4; // 限制小數點後位數
+            while (fracPart > 0 && limit > 0) {
+                fracPart *= base;
+                let digit = Math.floor(fracPart);
+                fracStr += digit.toString(base).toUpperCase();
+                fracPart -= digit;
+                limit--;
+            }
+        }
+        return intStr + fracStr;
+    }
+
+    // 開始測驗
+    function startQuiz() {
+        const name = document.getElementById('userName').value.trim();
+        if (!name) {
+            alert('請先輸入姓名或學號！');
+            return;
+        }
+
+        const count = parseInt(document.getElementById('questionCount').value);
+        questions = generateQuestions(count);
+
+        const container = document.getElementById('questionsContainer');
+        container.innerHTML = '';
+
+        questions.forEach((q, index) => {
+            container.innerHTML += `
+                <div class="question-card">
+                    <div class="question-title">第 ${index + 1} 題：請將 ${q.fromBase} 的 <code>${q.valStr}</code> 轉換為 <b>${q.toBase}</b></div>
+                    <input type="text" id="ans-${index}" placeholder="請輸入答案 (英文字母請用大寫)" autocomplete="off">
+                </div>
+            `;
+        });
+
+        document.getElementById('setup-section').style.display = 'none';
+        document.getElementById('quiz-section').style.display = 'block';
+    }
+
+    // 算分與傳送成績
+    function submitQuiz() {
+        let score = 0;
+        const total = questions.length;
+        const name = document.getElementById('userName').value.trim();
+
+        questions.forEach((q, index) => {
+            const userAns = document.getElementById(`ans-${index}`).value.trim().toUpperCase();
+            if (userAns === q.answer) {
+                score++;
+            }
+        });
+
+        const resultBox = document.getElementById('result');
+        resultBox.style.display = 'block';
+        resultBox.innerHTML = `<h3>測驗結束！計算中...</h3>`;
+
+        // 整理傳送至 Google Apps Script 的資料
+        const payload = {
+            name: name,
+            score: score,
+            total: total
+        };
+
+        // 發送 POST 請求給 GAS (使用 no-cors 模式或 standard fetch)
+        fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            mode: 'no-cors', // 避開跨網域 CORS 限制
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(() => {
+            resultBox.innerHTML = `
+                <h2>測驗完成！</h2>
+                <p>得分：<b>${score} / ${total}</b></p>
+                <p>正確率：<b>${((score / total) * 100).toFixed(1)}%</b></p>
+                <p style="color: green;">成績已順利上傳至 Google Sheets！</p>
+            `;
+            document.getElementById('quiz-section').style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            resultBox.innerHTML = `
+                <h2>測驗完成！</h2>
+                <p>得分：<b>${score} / ${total}</b></p>
+                <p style="color: red;">成績上傳失敗，請檢查網路連線或 GAS 設定。</p>
+            `;
+        });
+    }
+</script>
+
+</body>
+</html>
